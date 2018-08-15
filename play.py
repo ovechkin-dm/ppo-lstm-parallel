@@ -18,7 +18,7 @@ def start(env):
 
     with tf.Session() as session:
         with tf.variable_scope(MASTER_NAME) as scope:
-            env_opts = environments.get_env_options(env, False, 1)
+            env_opts = environments.get_env_options(env, False)
             policy = get_policy(env_opts, session)
             master_agent = PPOAgent(policy, session, MASTER_NAME, env_opts)
 
