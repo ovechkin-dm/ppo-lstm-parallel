@@ -8,7 +8,7 @@ class PPOAgent:
         self.env_opts = env_opts
         self.policy = policy
         self.session = session
-        self.reward_transformer = ScalingRewardTransformer(env_opts)
+        self.reward_transformer = get_reward_transformer(env_opts)
         self.worker_name = worker_name
         self.advantages = tf.placeholder(tf.float32, [BATCH_SIZE, MAX_SEQ_LEN])
         self.returns = tf.placeholder(tf.float32, [BATCH_SIZE, MAX_SEQ_LEN])
