@@ -99,7 +99,7 @@ class LstmContinousPolicy(Policy):
             sigma_logits = tf.matmul(l_a, w_sigma_1) + b_sigma_1
         else:
             std_dim = hidden_layer_size // 3
-            std_vars = tf.Variable(tf.random_normal([self.action_size, std_dim], mean=0.5, stddev=0.005), name="std_vars")
+            std_vars = tf.Variable(tf.random_normal([self.action_size, std_dim], stddev=0.005), name="std_vars")
             sigma_logits = tf.reduce_mean(std_vars, axis=1)
             sigma_logits = tf.zeros_like(mu_logits) + sigma_logits
 
@@ -212,7 +212,7 @@ class MlpContinousPolicy(Policy):
             sigma_logits = tf.matmul(l3_a, a_std_w1) + a_std_b1
         else:
             std_dim = hidden_layer_size // 3
-            std_vars = tf.Variable(tf.random_normal([self.action_size, std_dim], mean=0.5, stddev=0.005), name="std_vars")
+            std_vars = tf.Variable(tf.random_normal([self.action_size, std_dim], stddev=0.005), name="std_vars")
             sigma_logits = tf.reduce_mean(std_vars, axis=1)
             sigma_logits = tf.zeros_like(mu_logits) + sigma_logits
 
