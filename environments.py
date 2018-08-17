@@ -13,8 +13,10 @@ def parse_properties(file_name):
             result[a] = False
         elif "." in b:
             result[a] = float(b)
-        else:
+        elif b.isdigit():
             result[a] = int(b)
+        else:
+            result[a] = b
     return result
 
 
@@ -46,7 +48,11 @@ def get_env_options(env, use_gpu):
         "use_gpu": use_gpu,
 
     }
-    file_props = parse_properties("props/%s.properties" % env_name)
+    file_props = {}
+    try:
+        file_props = parse_properties("props/%s.properties" % env_name)
+    except:
+        print("Failed to load custom properties for env. Using default")
     default_props = parse_properties("props/default.properties")
     result = basic_opts
     for k, v in default_props.items():
@@ -55,6 +61,8 @@ def get_env_options(env, use_gpu):
         result[k] = v
     mem_fraction = 0.98 / (result["worker_num"] + 2)
     result["mem_fraction"] = mem_fraction
+    for k, v in result.items():
+        print("%s : %s" % (k, v))
     return result
 
 

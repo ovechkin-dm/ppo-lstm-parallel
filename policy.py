@@ -95,7 +95,13 @@ class LstmContinousPolicy(Policy):
         l_a = tf.nn.tanh(tf.matmul(p_flat_rnn_out, w_a) + b_a)
         mu_logits = tf.matmul(l_a, w_mu_1) + b_mu_1
 
-        sigma_logits = tf.matmul(l_a, w_sigma_1) + b_sigma_1
+        if env_opts["nn_std"]:
+            sigma_logits = tf.matmul(l_a, w_sigma_1) + b_sigma_1
+        else:
+            std_dim = hidden_layer_size // 3
+            std_vars = tf.Variable(tf.random_normal([self.action_size, std_dim], stddev=0.005), name="std_vars")
+            sigma_logits = tf.reduce_mean(std_vars, axis=1)
+            sigma_logits = tf.zeros_like(mu_logits) + sigma_logits
 
         l_v = tf.nn.tanh(tf.matmul(v_flat_rnn_out, w_v) + b_v)
 
@@ -201,10 +207,17 @@ class MlpContinousPolicy(Policy):
         a_std_w1, a_std_b1 = dense([hidden_layer_size, self.action_size], "actor_std_l3")
 
         mu_logits = tf.matmul(l3_a, a_mean_w1) + a_mean_b1
-        sigma_logits = tf.matmul(l3_a, a_std_w1) + a_std_b1
+
+        if env_opts["nn_std"]:
+            sigma_logits = tf.matmul(l3_a, a_std_w1) + a_std_b1
+        else:
+            std_dim = hidden_layer_size // 3
+            std_vars = tf.Variable(tf.random_normal([self.action_size, std_dim], stddev=0.005), name="std_vars")
+            sigma_logits = tf.reduce_mean(std_vars, axis=1)
+            sigma_logits = tf.zeros_like(mu_logits) + sigma_logits
 
         self.mu_outputs = mu_logits
-        self.sigma_outputs = tf.nn.softplus(sigma_logits) + 1e-3
+        self.sigma_outputs = tf.nn.softplus(sigma_logits) * 3.0 + 1e-3
         self.action_outputs = tf.concat([self.mu_outputs, self.sigma_outputs], axis=1)
         self.dist = get_distribution(self.action_size, self.mu_outputs, self.sigma_outputs)
         self.old_actions = tf.placeholder(tf.float32, [None, self.action_size * 2])

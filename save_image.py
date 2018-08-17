@@ -1,10 +1,13 @@
-import gym
-import tensorflow as tf
 import argparse
+
+import gym
+import imageio
+import tensorflow as tf
+
 import environments
 from agent import PPOAgent
-import imageio
 from policy import *
+
 
 def print_summary(ep_count, rew):
     print("Episode: %s. Reward: %s" % (ep_count, rew))
@@ -49,6 +52,7 @@ def start(env):
                 global_step += 1
             print(episode_count, cum_rew)
         imageio.mimsave(IMAGE_PATH, frames, duration=1.0 / 60.0)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=('Parallel PPO'))
