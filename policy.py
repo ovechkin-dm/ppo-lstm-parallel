@@ -217,7 +217,7 @@ class MlpContinousPolicy(Policy):
             sigma_logits = tf.zeros_like(mu_logits) + sigma_logits
 
         self.mu_outputs = mu_logits
-        self.sigma_outputs = tf.nn.softplus(sigma_logits) * 3.0 + 1e-3
+        self.sigma_outputs = tf.nn.softplus(sigma_logits) + 1e-3
         self.action_outputs = tf.concat([self.mu_outputs, self.sigma_outputs], axis=1)
         self.dist = get_distribution(self.action_size, self.mu_outputs, self.sigma_outputs)
         self.old_actions = tf.placeholder(tf.float32, [None, self.action_size * 2])
