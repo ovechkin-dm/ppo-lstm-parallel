@@ -4,15 +4,12 @@ import shutil
 import threading
 import time
 
-import gym
 from master import SimpleMaster
 import environments
 
 
 def start(env, gpu):
-    env = gym.make(env)
-
-    env_name = env.spec.id
+    env_name = env
 
     if not os.path.exists('logs'):
         os.mkdir('logs')
@@ -25,11 +22,8 @@ def start(env, gpu):
     except:
         pass
 
-    env_producer = environments.EnvironmentProducer(env.spec.id)
-    env_opts = environments.get_env_options(env, gpu)
-    worker_num = env_opts["worker_num"]
-    gather_per_worker = env_opts["gather_per_worker"]
-    master = SimpleMaster(worker_num, gather_per_worker, env_opts, env_producer)
+    env_producer = environments.EnvironmentProducer(env_name, gpu)
+    master = SimpleMaster(env_producer)
 
 
 if __name__ == "__main__":

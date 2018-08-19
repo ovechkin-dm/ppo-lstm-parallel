@@ -7,13 +7,14 @@ import utils
 from agent import PPOAgent
 from policy import get_policy
 from worker import Worker
+import environments
 
 
 class SimpleMaster:
-    def __init__(self, worker_size, gather_per_worker, env_opts, env_producer):
-        self.worker_size = worker_size
-        self.gather_per_worker = gather_per_worker
-        self.env_opts = env_opts
+    def __init__(self, env_producer):
+        self.env_name = env_producer.get_env_name()
+        self.config = environments.get_config(self.env_name)
+        self.worker_size = self.config["worker_num"]
         self.env_producer = env_producer
         self.queues = []
         self.w_in_queue = Queue()
@@ -30,8 +31,8 @@ class SimpleMaster:
         self.beta = 1
         self.lr_multiplier = 1.0
         self.iter_count = 1
-        self.variables_file_path = "models/%s/variables.txt" % env_opts["env_name"]
-        self.model_path = "models/%s/model" % env_opts["env_name"]
+        self.variables_file_path = "models/%s/variables.txt" % self.env_name
+        self.model_path = "models/%s/model" % self.env_name
         self.initialized = False
         self.start()
 
@@ -39,17 +40,17 @@ class SimpleMaster:
         for i in range(self.worker_size):
             q = Queue()
             self.queues.append(q)
-            t = Process(target=make_worker, args=(self.env_producer, i, self.env_opts,
-                                                  self.gather_per_worker, q, self.w_in_queue))
+            t = Process(target=make_worker, args=(self.env_producer, i, q, self.w_in_queue))
             t.start()
 
     def start(self):
         import tensorflow as tf
-        self.summary_writer = tf.summary.FileWriter("logs/%s" % self.env_opts["env_name"])
-        self.session = utils.create_session(self.env_opts, True)
+        env_opts = environments.get_env_options(self.env_name, self.env_producer.get_use_gpu())
+        self.summary_writer = tf.summary.FileWriter("logs/%s" % self.env_name)
+        self.session = utils.create_session(env_opts, True)
         with tf.variable_scope("master-0"):
-            pol = get_policy(self.env_opts, self.session)
-            self.agent = PPOAgent(pol, self.session, "master-0", self.env_opts)
+            pol = get_policy(env_opts, self.session)
+            self.agent = PPOAgent(pol, self.session, "master-0", env_opts)
             self.trainable_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "master-0")
             self.accum_vars = [tf.Variable(tf.zeros_like(tv.initialized_value()), trainable=False) for tv in
                                self.trainable_vars]
@@ -69,9 +70,9 @@ class SimpleMaster:
         self.session.run(tf.global_variables_initializer())
         try:
             self.saver = tf.train.import_meta_graph(
-                tf.train.latest_checkpoint("models/%s/" % self.env_opts["env_name"]) + ".meta")
+                tf.train.latest_checkpoint("models/%s/" % env_opts["env_name"]) + ".meta")
             self.saver.restore(self.session,
-                               tf.train.latest_checkpoint("models/%s/" % self.env_opts["env_name"]))
+                               tf.train.latest_checkpoint("models/%s/" % env_opts["env_name"]))
         except:
             print("failed to restore model")
 
@@ -189,5 +190,5 @@ class SimpleMaster:
         self.summary_writer.flush()
 
 
-def make_worker(env_producer, i, env_opts, gather_per_worker, q, w_in_queue):
-    return Worker(env_producer, i, env_opts, gather_per_worker, q, w_in_queue)
+def make_worker(env_producer, i, q, w_in_queue):
+    return Worker(env_producer, i, q, w_in_queue)

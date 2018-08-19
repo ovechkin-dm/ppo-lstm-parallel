@@ -1,6 +1,3 @@
-import gym
-
-
 def parse_properties(file_name):
     lines = open(file_name).readlines()
     result = {}
@@ -20,8 +17,9 @@ def parse_properties(file_name):
     return result
 
 
-def get_env_options(env, use_gpu):
-    env_name = env.spec.id
+def get_env_options(env_name, use_gpu):
+    import gym
+    env = gym.make(env_name)
     max_episode_steps = env.spec.max_episode_steps
     if max_episode_steps is None:
         max_episode_steps = 1e+8
@@ -48,28 +46,44 @@ def get_env_options(env, use_gpu):
         "use_gpu": use_gpu,
 
     }
-    file_props = {}
+    file_props = get_config(env_name)
+    for k, v in file_props.items():
+        basic_opts[k] = v
+    result = basic_opts
+    for k, v in result.items():
+        print("%s : %s" % (k, v))
+    return result
+
+
+def get_config(env_name):
     try:
         file_props = parse_properties("props/%s.properties" % env_name)
     except:
         print("Failed to load custom properties for env. Using default")
+        file_props = {}
     default_props = parse_properties("props/default.properties")
-    result = basic_opts
+    result = {}
     for k, v in default_props.items():
         result[k] = v
     for k, v in file_props.items():
         result[k] = v
     mem_fraction = 0.98 / (result["worker_num"] + 2)
     result["mem_fraction"] = mem_fraction
-    for k, v in result.items():
-        print("%s : %s" % (k, v))
     return result
 
 
 class EnvironmentProducer:
-    def __init__(self, env_name):
+    def __init__(self, env_name, use_gpu):
         self.env_name = env_name
+        self.use_gpu = use_gpu
 
     def get_new_environment(self):
+        import gym
         env = gym.make(self.env_name)
         return env
+
+    def get_env_name(self):
+        return self.env_name
+
+    def get_use_gpu(self):
+        return self.use_gpu

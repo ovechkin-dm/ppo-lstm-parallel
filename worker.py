@@ -6,30 +6,31 @@ from agent import PPOAgent
 from gather import GatheringWorker
 from policy import get_policy
 import utils
+import environments
+
 
 class Worker:
-    def __init__(self, env_producer, idx, env_opts,
-                 num_gather_workers, master_weights_in_queue, master_weights_out_queue):
-        self.env_opts = env_opts
-        self.num_gather_workers = num_gather_workers
+    def __init__(self, env_producer, idx, master_weights_in_queue, master_weights_out_queue):
+        self.env_name = env_producer.get_env_name()
+        self.config = environments.get_config(self.env_name)
+        self.num_gather_workers = self.config["gather_per_worker"]
         self.env_producer = env_producer
-        self.batch_size = env_opts["batch_size"]
-        self.clip_eps = env_opts["clip_eps"]
-        self.grad_step = env_opts["grad_step"]
-        self.epochs = env_opts["epochs"]
-        self.entropy_coef = env_opts["entropy_coef"]
-        self.state_dim = env_opts["state_dim"]
+        self.batch_size = self.config["batch_size"]
+        self.clip_eps = self.config["clip_eps"]
+        self.grad_step = self.config["grad_step"]
+        self.epochs = self.config["epochs"]
+        self.entropy_coef = self.config["entropy_coef"]
         self.idx = idx
         self.session = None
         self.episode_step = 0
         self.initialized = False
-        self.beta = self.env_opts["init_beta"]
-        self.eta = self.env_opts["eta"]
-        self.kl_target = self.env_opts["kl_target"]
-        self.use_kl_loss = self.env_opts["use_kl_loss"]
+        self.beta = self.config["init_beta"]
+        self.eta = self.config["eta"]
+        self.kl_target = self.config["kl_target"]
+        self.use_kl_loss = self.config["use_kl_loss"]
         self.lr_multiplier = 1.0
         self.prev_batch = None
-        self.variables_file_path = "models/%s/variables.txt" % env_opts["env_name"]
+        self.variables_file_path = "models/%s/variables.txt" % self.env_name
         self.worker_queue = Queue()
         self.weights_queues = [Queue() for _ in range(self.num_gather_workers)]
         self.master_weights_in_queue = master_weights_in_queue
@@ -45,10 +46,11 @@ class Worker:
 
     def init_agent(self):
         import tensorflow as tf
-        self.session = utils.create_session(self.env_opts, True)
+        env_opts = environments.get_env_options(self.env_name, self.env_producer.get_use_gpu())
+        self.session = utils.create_session(env_opts, True)
         with tf.variable_scope("worker-%s" % self.idx):
-            pol = get_policy(self.env_opts, self.session)
-            self.agent = PPOAgent(pol, self.session, "worker-%s" % self.idx, self.env_opts)
+            pol = get_policy(env_opts, self.session)
+            self.agent = PPOAgent(pol, self.session, "worker-%s" % self.idx, env_opts)
             self.trainable_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "worker-%s" % self.idx)
             self.accum_vars = [tf.Variable(tf.zeros_like(tv.initialized_value()), trainable=False) for tv in
                                self.trainable_vars]
@@ -68,8 +70,8 @@ class Worker:
 
     def init_workers(self):
         for i in range(self.num_gather_workers):
-            rollout_size = self.env_opts["rollout_size"] // self.num_gather_workers
-            t = Process(target=make_worker, args=(i, self.env_producer, self.env_opts,
+            rollout_size = self.config["rollout_size"] // self.num_gather_workers
+            t = Process(target=make_worker, args=(i, self.env_producer,
                                                   self.worker_queue,
                                                   self.weights_queues[i],
                                                   rollout_size))
@@ -122,7 +124,7 @@ class Worker:
 
         if self.prev_batch is not None:
             prev_all_states, prev_all_advantages, prev_all_picked_actions, prev_all_returns, \
-                prev_all_old_actions_probs, prev_all_pred_values, prev_all_hidden_states = self.prev_batch
+            prev_all_old_actions_probs, prev_all_pred_values, prev_all_hidden_states = self.prev_batch
             all_states = np.concatenate([cur_all_states, prev_all_states], axis=0)
             all_advantages = np.concatenate([cur_all_advantages, prev_all_advantages], axis=0)
             all_picked_actions = np.concatenate([cur_all_picked_actions, prev_all_picked_actions], axis=0)
@@ -221,5 +223,5 @@ class Worker:
         return train_stats
 
 
-def make_worker(i, env_producer, env_opts, worker_queue, weights_queue, rollout_size):
-    return GatheringWorker(i, env_producer, env_opts, rollout_size, worker_queue, weights_queue)
+def make_worker(i, env_producer, worker_queue, weights_queue, rollout_size):
+    return GatheringWorker(i, env_producer, rollout_size, worker_queue, weights_queue)

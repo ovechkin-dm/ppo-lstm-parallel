@@ -3,11 +3,14 @@ import numpy as np
 from agent import PPOAgent
 from policy import get_policy
 import utils
+import environments
 
 
 class GatheringWorker:
-    def __init__(self, idx, env_producer, env_opts, rollout_size,
+    def __init__(self, idx, env_producer, rollout_size,
                  worker_queue, weights_queue):
+        self.env_name = env_producer.get_env_name()
+        self.config = environments.get_config(self.env_name)
         self.session = None
         self.idx = idx
         self.env_producer = env_producer
@@ -15,21 +18,18 @@ class GatheringWorker:
         self.s0 = None
         self.trainable_vars = None
         self.agent = None
-        self.env_opts = env_opts
         self.cur_hidden_state = None
         self.episode = None
         self.episodes = []
-        self.batch_size = env_opts["batch_size"]
+        self.batch_size = self.config["batch_size"]
         self.terminal = False
-        self.recurrent_policy = env_opts["recurrent"]
-        self.timestep_size = env_opts["timestep_size"]
+        self.recurrent_policy = self.config["recurrent"]
+        self.timestep_size = self.config["timestep_size"]
         if not self.recurrent_policy:
             self.timestep_size = 1
-        self.discount_factor = env_opts["discount_factor"]
-        self.gae_factor = env_opts["gae_factor"]
-        self.max_episode_steps = env_opts["max_episode_steps"]
+        self.discount_factor = self.config["discount_factor"]
+        self.gae_factor = self.config["gae_factor"]
         self.rollout_size = rollout_size
-        self.discrete_env = env_opts["discrete"]
         self.ep_count = 0
         self.episode_step = 0
         self.cum_rew = 0
@@ -38,6 +38,7 @@ class GatheringWorker:
         self.sampled_a_prob = None
         self.accum_vars = None
         self.assign_op = None
+        self.env_opts = None
         self.worker_queue = worker_queue
         self.weights_queue = weights_queue
         self.stats = []
@@ -54,7 +55,7 @@ class GatheringWorker:
             self.episodes = []
             for i in range(self.rollout_size):
                 if self.terminal:
-                    if self.episode_step == self.max_episode_steps and len(self.episode[1]) > 0:
+                    if self.episode_step == self.env_opts["max_episode_steps"] and len(self.episode[1]) > 0:
                         self.episode[4][-1] = False
                     self.episode_step = 0
                     self.s0 = self.env.reset()
@@ -103,6 +104,7 @@ class GatheringWorker:
 
     def init(self):
         import tensorflow as tf
+        self.env_opts = environments.get_env_options(self.env_name, self.env_producer.get_use_gpu())
         self.env = self.env_producer.get_new_environment()
         self.s0 = self.env.reset()
         self.session = utils.create_session(self.env_opts, False)

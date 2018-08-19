@@ -10,7 +10,6 @@ def print_summary(ep_count, rew):
 
 
 def start(env):
-    env = gym.make(env)
 
     MASTER_NAME = "master-0"
 
@@ -23,8 +22,8 @@ def start(env):
             master_agent = PPOAgent(policy, session, MASTER_NAME, env_opts)
 
         saver = tf.train.Saver(max_to_keep=1)
-        saver = tf.train.import_meta_graph(tf.train.latest_checkpoint("models/%s/" % env.spec.id) + ".meta")
-        saver.restore(session, tf.train.latest_checkpoint("models/%s/" % env.spec.id))
+        saver = tf.train.import_meta_graph(tf.train.latest_checkpoint("models/%s/" % env) + ".meta")
+        saver.restore(session, tf.train.latest_checkpoint("models/%s/" % env))
         try:
             pass
         except:
