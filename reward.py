@@ -3,7 +3,7 @@ class ScalingRewardTransformer:
         self.env_opts = env_opts
 
     def transform_reward(self, r):
-        return max(-0.001, r / 100.0)
+        return r / 100.0
 
 
 class PositiveRewardTransformer:
