@@ -36,7 +36,7 @@ class PPOAgent:
         self.seq_len = tf.reduce_sum(self.mask)
         self.value_loss = self.reduce_mean(tf.square(self.value_outputs - returns_flat))
 
-        ratio = self.policy.get_current_prob() / (self.policy.get_old_prob() + 1e-4)
+        ratio = (self.policy.get_current_prob() + 1e-8) / (self.policy.get_old_prob() + 1e-8)
         clipped_ratio = tf.clip_by_value(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps)
         policy_loss_left = self.advantages_flat * clipped_ratio
         policy_loss_right = ratio * self.advantages_flat

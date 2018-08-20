@@ -515,6 +515,136 @@ class LstmDiscretePolicy(Policy):
         return self.init_hidden_state
 
 
+class DiscretizeContinousPolicy(Policy):
+    def __init__(self, session, env_opts, discrete_step):
+        super().__init__(env_opts["action_dim"], env_opts["state_dim"])
+        import tensorflow as tf
+        state_size = env_opts["state_dim"]
+        self.scales_lo = env_opts["scales_lo"]
+        self.scales_hi = env_opts["scales_hi"]
+        self.discrete_step = discrete_step
+
+        hidden_layer_size = env_opts["hidden_layer_size"]
+        self.state_inputs_timestep = tf.placeholder(tf.float32, [BATCH_SIZE, 1, state_size])
+        self.state_inputs = tf.reshape(self.state_inputs_timestep, [-1, state_size])
+        a_w1, a_b1 = dense([state_size, hidden_layer_size], "actor_l1")
+        a_w2, a_b2 = dense([hidden_layer_size, hidden_layer_size], "actor_l2")
+        a_w3, a_b3 = dense([hidden_layer_size, hidden_layer_size], "actor_l3")
+        l1_a = tf.nn.tanh(tf.matmul(self.state_inputs, a_w1) + a_b1)
+        l2_a = tf.nn.tanh(tf.matmul(l1_a, a_w2) + a_b2)
+        l3_a = tf.nn.tanh(tf.matmul(l2_a, a_w3) + a_b3)
+        self.picked_actions = tf.placeholder(tf.float32, [None, self.action_size])
+        self.old_actions = tf.placeholder(tf.float32, [None, self.discrete_step * self.action_size])
+        all_action_outputs = []
+        for i in range(self.action_size):
+            a_mean_w3, a_mean_b3 = dense([hidden_layer_size, self.discrete_step], "actor_mean_l3_%s" % i)
+            logits = tf.matmul(l3_a, a_mean_w3) + a_mean_b3
+            action_outputs = tf.nn.softmax(logits)
+            all_action_outputs.append(action_outputs)
+        self.action_outputs = tf.concat(all_action_outputs, axis=1)
+
+        pick_mask = (self.picked_actions - self.scales_lo) / (self.scales_hi - self.scales_lo) * (
+                self.discrete_step - 1)
+        self.picked_actions_int = tf.cast(pick_mask + 0.00001, tf.int32)
+        self.picked_actions_ohe = tf.one_hot(self.picked_actions_int, self.discrete_step)
+
+        self.picked_actions_ohe = tf.reshape(self.picked_actions_ohe, [-1, self.discrete_step * self.action_size])
+
+        self.session = session
+        self.hidden_inputs = tf.placeholder(tf.float32, [None, None])
+
+        v_w1, v_b1 = dense([state_size, hidden_layer_size], "value_l1")
+        v_w2, v_b2 = dense([hidden_layer_size, hidden_layer_size], "value_l2")
+        v_w3, v_b3 = dense([hidden_layer_size, hidden_layer_size], "value_l3")
+        v_w4, v_b4 = dense([hidden_layer_size, 1], "value_l4")
+        l1_v = tf.nn.tanh(tf.matmul(self.state_inputs, v_w1) + v_b1)
+        l2_v = tf.nn.tanh(tf.matmul(l1_v, v_w2) + v_b2)
+        l3_v = tf.nn.tanh(tf.matmul(l2_v, v_w3) + v_b3)
+        self.v_outputs = tf.identity(tf.matmul(l3_v, v_w4) + v_b4)
+
+    def get_state_inputs(self):
+        return self.state_inputs_timestep
+
+    def get_hidden_inputs(self):
+        return self.hidden_inputs
+
+    def value_outputs(self):
+        return self.v_outputs
+
+    def sample(self, state, hidden_state):
+        a_out, v_out = self.session.run([self.action_outputs,
+                                         self.v_outputs], feed_dict={
+            self.state_inputs: np.array(state).reshape((1, -1))
+        })
+        a_out = a_out[0]
+        v_out = v_out[0, 0]
+        h_out = np.array([0.0])
+        picked_actions = np.reshape(a_out, [self.action_size, self.discrete_step])
+        acts = []
+        for i in range(self.action_size):
+            action_probs = picked_actions[i]
+            chosen_action = np.random.choice(np.arange(0, self.discrete_step), p=action_probs)
+            chosen_action = chosen_action / (self.discrete_step - 1)
+            chosen_action = chosen_action * (self.scales_hi[i] - self.scales_lo[i]) + self.scales_lo[i]
+            acts.append(chosen_action)
+        picked_actions = np.array(acts)
+        return picked_actions, a_out, h_out, v_out
+
+    def get_old_actions_input(self):
+        return self.old_actions
+
+    def get_picked_actions_input(self):
+        return self.picked_actions
+
+    def get_old_prob(self):
+        import tensorflow as tf
+        result = self.picked_actions_ohe * self.old_actions
+        result = tf.reshape(result, [-1, self.action_size, self.discrete_step])
+        result = tf.reduce_sum(result, axis=2)
+        result = tf.reduce_prod(result, axis=1)
+        return result
+
+    def get_current_prob(self):
+        import tensorflow as tf
+        result = self.picked_actions_ohe * self.action_outputs
+        result = tf.reshape(result, [-1, self.action_size, self.discrete_step])
+        result = tf.reduce_sum(result, axis=2)
+        result = tf.reduce_prod(result, axis=1)
+        return result
+
+    def entropy(self):
+        import tensorflow as tf
+        result = -tf.reduce_sum(self.action_outputs * tf.log(self.action_outputs), axis=1)
+        return result / self.discrete_step
+
+    def strict_sample(self, state, hidden_state):
+        a_out = self.session.run(self.action_outputs, feed_dict={
+            self.state_inputs: np.array(state).reshape((1, -1))
+        })
+        a_out = a_out[0]
+        h_out = np.array([0.0])
+        picked_actions = np.reshape(a_out, [self.action_size, self.discrete_step])
+        acts = []
+        for i in range(self.action_size):
+            action_probs = picked_actions[i]
+            chosen_action = np.argmax(action_probs)
+            #chosen_action = np.random.choice(np.arange(0, self.discrete_step), p=action_probs)
+            chosen_action = chosen_action / (self.discrete_step - 1)
+            chosen_action = chosen_action * (self.scales_hi[i] - self.scales_lo[i]) + self.scales_lo[i]
+            acts.append(chosen_action)
+        picked_actions = np.array(acts)
+        return picked_actions, h_out
+
+    def kl(self):
+        import tensorflow as tf
+        x = self.old_actions * tf.log(self.old_actions / (self.action_outputs + 1e-9))
+        result = tf.reduce_mean(x, axis=1)
+        return result
+
+    def get_initial_state(self):
+        return np.array([0.0])
+
+
 def get_policy(env_opts, session):
     if env_opts["discrete"]:
         if env_opts["recurrent"]:
@@ -525,7 +655,10 @@ def get_policy(env_opts, session):
         if env_opts["recurrent"]:
             return LstmContinousPolicy(session, env_opts)
         else:
-            return MlpContinousPolicy(session, env_opts)
+            if env_opts["discretize_space"]:
+                return DiscretizeContinousPolicy(session, env_opts, env_opts["discrete_step"])
+            else:
+                return MlpContinousPolicy(session, env_opts)
 
 
 def get_distribution(action_dim, loc, scale):
