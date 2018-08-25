@@ -34,6 +34,7 @@ class SimpleMaster:
         self.variables_file_path = "models/%s/variables.txt" % self.env_name
         self.model_path = "models/%s/model" % self.env_name
         self.initialized = False
+        self.cur_step = -1
         self.start()
 
     def init_workers(self):
@@ -148,6 +149,9 @@ class SimpleMaster:
         return result
 
     def record_stats(self, stats):
+        if self.cur_step == stats["step"]:
+            return
+        self.cur_step = stats["step"]
         self.record_losses(stats["kl"], stats["entropy"], stats["hinge"], stats["src_policy_loss"],
                            stats["vloss"], stats["ploss"], stats["step"])
         cum_rew = 0

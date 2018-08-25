@@ -29,7 +29,6 @@ class Worker:
         self.kl_target = self.config["kl_target"]
         self.use_kl_loss = self.config["use_kl_loss"]
         self.lr_multiplier = 1.0
-        self.prev_batch = None
         self.variables_file_path = "models/%s/variables.txt" % self.env_name
         self.worker_queue = Queue()
         self.weights_queues = [Queue() for _ in range(self.num_gather_workers)]
@@ -114,35 +113,13 @@ class Worker:
         for i in range(self.num_gather_workers):
             results.append(self.worker_queue.get())
         w_idx = list(range(self.num_gather_workers))
-        cur_all_states = np.concatenate([results[i][0] for i in w_idx], axis=0)
-        cur_all_advantages = np.concatenate([results[i][1] for i in w_idx], axis=0)
-        cur_all_picked_actions = np.concatenate([results[i][2] for i in w_idx], axis=0)
-        cur_all_returns = np.concatenate([results[i][3] for i in w_idx], axis=0)
-        cur_all_old_actions_probs = np.concatenate([results[i][4] for i in w_idx], axis=0)
-        cur_all_pred_values = np.concatenate([results[i][5] for i in w_idx], axis=0)
-        cur_all_hidden_states = np.concatenate([results[i][6] for i in w_idx], axis=0)
-
-        if self.prev_batch is not None:
-            prev_all_states, prev_all_advantages, prev_all_picked_actions, prev_all_returns, \
-            prev_all_old_actions_probs, prev_all_pred_values, prev_all_hidden_states = self.prev_batch
-            all_states = np.concatenate([cur_all_states, prev_all_states], axis=0)
-            all_advantages = np.concatenate([cur_all_advantages, prev_all_advantages], axis=0)
-            all_picked_actions = np.concatenate([cur_all_picked_actions, prev_all_picked_actions], axis=0)
-            all_returns = np.concatenate([cur_all_returns, prev_all_returns], axis=0)
-            all_old_actions_probs = np.concatenate([cur_all_old_actions_probs, prev_all_old_actions_probs], axis=0)
-            all_pred_values = np.concatenate([cur_all_pred_values, prev_all_pred_values], axis=0)
-            all_hidden_states = np.concatenate([cur_all_hidden_states, prev_all_hidden_states], axis=0)
-        else:
-            all_states = cur_all_states
-            all_advantages = cur_all_advantages
-            all_picked_actions = cur_all_picked_actions
-            all_returns = cur_all_returns
-            all_old_actions_probs = cur_all_old_actions_probs
-            all_pred_values = cur_all_pred_values
-            all_hidden_states = cur_all_hidden_states
-
-        self.prev_batch = [cur_all_states, cur_all_advantages, cur_all_picked_actions, cur_all_returns,
-                           cur_all_old_actions_probs, cur_all_pred_values, cur_all_hidden_states]
+        all_states = np.concatenate([results[i][0] for i in w_idx], axis=0)
+        all_advantages = np.concatenate([results[i][1] for i in w_idx], axis=0)
+        all_picked_actions = np.concatenate([results[i][2] for i in w_idx], axis=0)
+        all_returns = np.concatenate([results[i][3] for i in w_idx], axis=0)
+        all_old_actions_probs = np.concatenate([results[i][4] for i in w_idx], axis=0)
+        all_pred_values = np.concatenate([results[i][5] for i in w_idx], axis=0)
+        all_hidden_states = np.concatenate([results[i][6] for i in w_idx], axis=0)
 
         all_advantages = (all_advantages - all_advantages.mean()) / (max(all_advantages.std(), 1e-4))
 
@@ -205,7 +182,7 @@ class Worker:
                 self.beta = np.maximum(1 / 35, self.beta / 1.5)
                 if self.beta <= 1 / 30.0:
                     self.lr_multiplier *= 1.5
-            self.lr_multiplier = max(min(self.lr_multiplier, 3.0), 0.1)
+            self.lr_multiplier = max(min(self.lr_multiplier, 10.0), 0.1)
 
         train_stats = {
             "stats": stats,

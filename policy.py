@@ -42,6 +42,9 @@ class Policy:
     def get_initial_state(self):
         pass
 
+    def get_prob_ratio(self):
+        return (self.get_current_prob() + 1e-8) / (self.get_old_prob() + 1e-8)
+
 
 class LstmContinousPolicy(Policy):
     def __init__(self, session, env_opts):
@@ -628,7 +631,6 @@ class DiscretizeContinousPolicy(Policy):
         for i in range(self.action_size):
             action_probs = picked_actions[i]
             chosen_action = np.argmax(action_probs)
-            #chosen_action = np.random.choice(np.arange(0, self.discrete_step), p=action_probs)
             chosen_action = chosen_action / (self.discrete_step - 1)
             chosen_action = chosen_action * (self.scales_hi[i] - self.scales_lo[i]) + self.scales_lo[i]
             acts.append(chosen_action)
@@ -643,6 +645,18 @@ class DiscretizeContinousPolicy(Policy):
 
     def get_initial_state(self):
         return np.array([0.0])
+
+    def get_prob_ratio(self):
+        import tensorflow as tf
+        new_result = self.picked_actions_ohe * self.action_outputs
+        new_result = tf.reshape(new_result, [-1, self.action_size, self.discrete_step])
+        new_result = tf.reduce_sum(new_result, axis=2)
+
+        old_result = self.picked_actions_ohe * self.old_actions
+        old_result = tf.reshape(old_result, [-1, self.action_size, self.discrete_step])
+        old_result = tf.reduce_sum(old_result, axis=2)
+        result = tf.reduce_prod(new_result / old_result, axis=1)
+        return result
 
 
 def get_policy(env_opts, session):
