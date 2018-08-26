@@ -55,6 +55,8 @@ class LstmContinousPolicy(Policy):
         super().__init__(env_opts["action_dim"], env_opts["state_dim"])
         state_size = env_opts["state_dim"]
         hidden_layer_size = env_opts["hidden_layer_size"]
+        self.scales_lo = env_opts["scales_lo"]
+        self.scales_hi = env_opts["scales_hi"]
         self.state_inputs = tf.placeholder(tf.float32, [BATCH_SIZE, MAX_SEQ_LEN, state_size])
 
         p_lstm_cell = tf.contrib.rnn.BasicLSTMCell(hidden_layer_size, state_is_tuple=True, name="policy_rnn")
@@ -116,6 +118,7 @@ class LstmContinousPolicy(Policy):
         self.sigma_outputs = tf.nn.softplus(sigma_logits) + 1e-3
         self.action_outputs = tf.concat([self.mu_outputs, self.sigma_outputs], axis=1)
         self.dist = get_distribution(self.action_size, self.mu_outputs, self.sigma_outputs)
+        self.dist_sample = self.dist.sample()
         self.v_outputs = tf.identity(tf.matmul(l_v, w4) + b4)
 
         self.old_actions = tf.placeholder(tf.float32, [None, self.action_size * 2])
@@ -135,9 +138,10 @@ class LstmContinousPolicy(Policy):
         return self.v_outputs
 
     def sample(self, state, hidden_state):
-        a_out, h_out, v_out = self.session.run([self.action_outputs,
-                                                self.hidden_state_out,
-                                                self.v_outputs], feed_dict={
+        a_out, h_out, v_out, picked_actions = self.session.run([self.action_outputs,
+                                                                self.hidden_state_out,
+                                                                self.v_outputs,
+                                                                self.dist_sample], feed_dict={
             self.state_inputs: np.array(state).reshape((1, 1, -1)),
             self.hidden_state_in: np.array([hidden_state])
         })
@@ -145,7 +149,7 @@ class LstmContinousPolicy(Policy):
         h_out = h_out[0]
         v_out = v_out[0, 0]
 
-        picked_actions = np.random.normal(a_out[0:self.action_size], a_out[self.action_size:])
+        picked_actions = picked_actions[0]
         return picked_actions, a_out, h_out, v_out
 
     def get_old_actions_input(self):
@@ -193,6 +197,15 @@ class LstmContinousPolicy(Policy):
     def get_initial_state(self):
         return self.init_hidden_state
 
+    def get_penalty(self):
+        import tensorflow as tf
+        hi_mu_loss = tf.square(tf.maximum(0.0, self.mu_outputs - self.scales_hi * 1.1))
+        lo_mu_loss = tf.square(tf.maximum(0.0, self.scales_lo * 1.1 - self.mu_outputs))
+        scale_diff = self.scales_hi - self.scales_lo
+        sigma_bound = tf.square(tf.maximum(0.0, self.sigma_outputs - scale_diff * 2.0))
+        loss = tf.reduce_sum(hi_mu_loss + lo_mu_loss + sigma_bound, axis=1)
+        return loss
+
 
 class MlpContinousPolicy(Policy):
     def __init__(self, session, env_opts):
@@ -230,6 +243,7 @@ class MlpContinousPolicy(Policy):
         self.sigma_outputs = tf.nn.softplus(sigma_logits) + 1e-3
         self.action_outputs = tf.concat([self.mu_outputs, self.sigma_outputs], axis=1)
         self.dist = get_distribution(self.action_size, self.mu_outputs, self.sigma_outputs)
+        self.dist_sample = self.dist.sample()
         self.old_actions = tf.placeholder(tf.float32, [None, self.action_size * 2])
         old_mu = self.old_actions[:, 0:self.action_size]
         old_sigma = self.old_actions[:, self.action_size:]
@@ -257,14 +271,15 @@ class MlpContinousPolicy(Policy):
         return self.v_outputs
 
     def sample(self, state, hidden_state):
-        a_out, v_out = self.session.run([self.action_outputs,
-                                         self.v_outputs], feed_dict={
+        a_out, v_out, picked_actions = self.session.run([self.action_outputs,
+                                                         self.v_outputs,
+                                                         self.dist_sample], feed_dict={
             self.state_inputs: np.array(state).reshape((1, -1))
         })
         a_out = a_out[0]
         v_out = v_out[0, 0]
         h_out = np.array([0.0])
-        picked_actions = np.random.normal(a_out[0:self.action_size], a_out[self.action_size:])
+        picked_actions = picked_actions[0]
         return picked_actions, a_out, h_out, v_out
 
     def get_old_actions_input(self):
@@ -563,7 +578,7 @@ class DiscretizeContinousPolicy(Policy):
         self.action_outputs = tf.concat(all_action_outputs, axis=1)
 
         pick_mask = (self.picked_actions - self.scales_lo) / (self.scales_hi - self.scales_lo) * (
-                self.discrete_step - 1)
+            self.discrete_step - 1)
         self.picked_actions_int = tf.cast(pick_mask + 0.00001, tf.int32)
         self.picked_actions_ohe = tf.one_hot(self.picked_actions_int, self.discrete_step)
 
