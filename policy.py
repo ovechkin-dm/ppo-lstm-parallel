@@ -45,6 +45,9 @@ class Policy:
     def get_prob_ratio(self):
         return (self.get_current_prob() + 1e-8) / (self.get_old_prob() + 1e-8)
 
+    def get_penalty(self):
+        return 0.0
+
 
 class LstmContinousPolicy(Policy):
     def __init__(self, session, env_opts):
@@ -102,7 +105,8 @@ class LstmContinousPolicy(Policy):
             sigma_logits = tf.matmul(l_a, w_sigma_1) + b_sigma_1
         else:
             std_dim = hidden_layer_size // 3
-            std_vars = tf.Variable(tf.random_normal([self.action_size, std_dim], stddev=0.005), name="std_vars")
+            std_vars = tf.Variable(tf.random_normal([self.action_size, std_dim], mean=1.0,
+                                                    stddev=0.005), name="std_vars")
             sigma_logits = tf.reduce_mean(std_vars, axis=1)
             sigma_logits = tf.zeros_like(mu_logits) + sigma_logits
 
@@ -196,6 +200,8 @@ class MlpContinousPolicy(Policy):
         import tensorflow as tf
         state_size = env_opts["state_dim"]
         hidden_layer_size = env_opts["hidden_layer_size"]
+        self.scales_lo = env_opts["scales_lo"]
+        self.scales_hi = env_opts["scales_hi"]
         self.state_inputs_timestep = tf.placeholder(tf.float32, [BATCH_SIZE, 1, state_size])
         self.state_inputs = tf.reshape(self.state_inputs_timestep, [-1, state_size])
         a_w1, a_b1 = dense([state_size, hidden_layer_size], "actor_l1")
@@ -215,7 +221,8 @@ class MlpContinousPolicy(Policy):
             sigma_logits = tf.matmul(l3_a, a_std_w1) + a_std_b1
         else:
             std_dim = hidden_layer_size // 3
-            std_vars = tf.Variable(tf.random_normal([self.action_size, std_dim], stddev=0.005), name="std_vars")
+            std_vars = tf.Variable(tf.random_normal([self.action_size, std_dim], mean=1.0,
+                                                    stddev=0.005), name="std_vars")
             sigma_logits = tf.reduce_mean(std_vars, axis=1)
             sigma_logits = tf.zeros_like(mu_logits) + sigma_logits
 
@@ -302,6 +309,15 @@ class MlpContinousPolicy(Policy):
 
     def get_initial_state(self):
         return np.array([0.0])
+
+    def get_penalty(self):
+        import tensorflow as tf
+        hi_mu_loss = tf.square(tf.maximum(0.0, self.mu_outputs - self.scales_hi * 1.1))
+        lo_mu_loss = tf.square(tf.maximum(0.0, self.scales_lo * 1.1 - self.mu_outputs))
+        scale_diff = self.scales_hi - self.scales_lo
+        sigma_bound = tf.square(tf.maximum(0.0, self.sigma_outputs - scale_diff * 2.0))
+        loss = tf.reduce_sum(hi_mu_loss + lo_mu_loss + sigma_bound, axis=1)
+        return loss
 
 
 class MlpDiscretePolicy(Policy):

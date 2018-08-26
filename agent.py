@@ -46,12 +46,12 @@ class PPOAgent:
         self.entropy = self.reduce_mean(self.policy.entropy())
         self.kl = 0.5 * self.reduce_mean(self.policy.kl())
         self.hinge = self.eta * tf.square(tf.maximum(0.0, self.kl - 2.0 * self.kl_target))
-
+        self.policy_penalty = self.reduce_mean(self.policy.get_penalty())
         if self.use_kl_loss:
             self.policy_loss = self.src_policy_loss + self.kl_beta * self.kl + self.hinge - self.entropy_coef * self.entropy
         else:
             self.policy_loss = self.policy_loss_mean - self.entropy_coef * self.entropy
-
+        self.policy_loss = self.policy_loss + self.policy_penalty
         v_train_ops = self.get_train_op(self.value_loss, 10.0, True, self.grad_step)
         p_train_ops = self.get_train_op(self.policy_loss, 10.0, True, self.grad_step)
         self.v_opt, self.v_optimize, self.v_grads = v_train_ops
