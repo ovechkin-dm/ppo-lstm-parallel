@@ -33,20 +33,22 @@ def start(env):
 
         producer = environments.EnvironmentProducer(env, False)
         env = producer.get_new_environment()
+        episode_count = 0
+        cum_rew = 0
         while True:
             terminal = False
             s0 = env.reset()
-            cum_rew = 0
             cur_hidden_state = master_agent.get_init_hidden_state()
-            episode_count = 0
+            episode_count += 1
+            cur_rew = 0
             while not terminal:
-                episode_count += 1
                 env.render()
                 action, h_out = master_agent.get_strict_sample(s0, cur_hidden_state)
                 cur_hidden_state = h_out
                 s0, r, terminal, _ = env.step(action)
                 cum_rew += r
-            print(episode_count, cum_rew)
+                cur_rew += r
+            print("Ep: %s, cur_reward: %s reward: %s" % (episode_count, cur_rew, cum_rew / episode_count))
 
 
 if __name__ == "__main__":
