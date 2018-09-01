@@ -19,12 +19,12 @@
 
 To start training process:
 ```
-python train_parallel.py %ENV_NAME%
+python train_parallel.py -env %ENV_NAME%
 ```
 
 To start play on trained model:
 ```
-python play.py %ENV_NAME%
+python play.py -env %ENV_NAME%
 ``` 
 
 To start tensorboard while training:
